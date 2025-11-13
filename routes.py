@@ -11,6 +11,7 @@ from schemas import (
 	APIErrorResponse,
 	PaginationMeta,
 	RenderRequest,
+	RenderByNameRequest,
 )
 from logger import logger
 from fastapi.responses import JSONResponse
@@ -107,6 +108,56 @@ def delete_template(name: str, db: Session = Depends(get_db)):
 		return JSONResponse(status_code=500, content=err.model_dump())
 
 
+@router.get("/api/v1/templates/id/{template_id}")
+def get_template_by_id(template_id: int, db: Session = Depends(get_db)):
+	try:
+		tpl = TemplateService.get_template_by_id(db, template_id)
+		tpl_dict = tpl.model_dump() if hasattr(tpl, 'model_dump') else dict(tpl)
+		if 'id' in tpl_dict:
+			tpl_dict['id'] = str(tpl_dict['id'])
+		public = {k: tpl_dict.get(k) for k in ('id', 'name', 'type', 'subject', 'body')}
+		return APIResponse(success=True, data=public, error=None, message="Template retrieved successfully", meta=None)
+	except ServiceException as se:
+		err = APIErrorResponse.model_validate({"success": False, "error": se.error, "message": se.message, "meta": {}})
+		return JSONResponse(status_code=se.status_code, content=err.model_dump())
+	except Exception as e:
+		logger.exception("Error retrieving template by id")
+		err = APIErrorResponse.model_validate({"success": False, "error": "InternalServerError", "message": "Internal server error", "meta": {}})
+		return JSONResponse(status_code=500, content=err.model_dump())
+
+
+@router.put("/api/v1/templates/id/{template_id}")
+def update_template_by_id(template_id: int, payload: TemplateUpdate, db: Session = Depends(get_db)):
+	try:
+		tpl = TemplateService.update_template_by_id(db, template_id, payload)
+		tpl_dict = tpl.model_dump() if hasattr(tpl, 'model_dump') else dict(tpl)
+		if 'id' in tpl_dict:
+			tpl_dict['id'] = str(tpl_dict['id'])
+		public = {k: tpl_dict.get(k) for k in ('id', 'name', 'type', 'subject', 'body')}
+		return APIResponse(success=True, data=public, error=None, message="Template updated successfully", meta=None)
+	except ServiceException as se:
+		err = APIErrorResponse.model_validate({"success": False, "error": se.error, "message": se.message, "meta": {}})
+		return JSONResponse(status_code=se.status_code, content=err.model_dump())
+	except Exception as e:
+		logger.exception("Error updating template by id")
+		err = APIErrorResponse.model_validate({"success": False, "error": "InternalServerError", "message": "Internal server error", "meta": {}})
+		return JSONResponse(status_code=500, content=err.model_dump())
+
+
+@router.delete("/api/v1/templates/id/{template_id}")
+def delete_template_by_id(template_id: int, db: Session = Depends(get_db)):
+	try:
+		ok = TemplateService.delete_template_by_id(db, template_id)
+		return APIResponse(success=True, data=None, error=None, message="Template deleted successfully", meta=None)
+	except ServiceException as se:
+		err = APIErrorResponse.model_validate({"success": False, "error": se.error, "message": se.message, "meta": {}})
+		return JSONResponse(status_code=se.status_code, content=err.model_dump())
+	except Exception as e:
+		logger.exception("Error deleting template by id")
+		err = APIErrorResponse.model_validate({"success": False, "error": "InternalServerError", "message": "Internal server error", "meta": {}})
+		return JSONResponse(status_code=500, content=err.model_dump())
+
+
 @router.post("/api/v1/templates/{name}/render")
 def render_template(name: str, payload: RenderRequest, db: Session = Depends(get_db)):
 	try:
@@ -117,6 +168,27 @@ def render_template(name: str, payload: RenderRequest, db: Session = Depends(get
 		return JSONResponse(status_code=se.status_code, content=err.model_dump())
 	except Exception:
 		logger.exception("Error rendering template")
+		err = APIErrorResponse.model_validate({"success": False, "error": "InternalServerError", "message": "Internal server error", "meta": {}})
+		return JSONResponse(status_code=500, content=err.model_dump())
+
+
+@router.post("/api/v1/templates/render")
+def render_template_by_name(payload: RenderByNameRequest, db: Session = Depends(get_db)):
+	"""Render a template by name using params map.
+	"""
+	try:
+		rendered = TemplateService.render_template(db, payload.name, payload.params)
+		# prefer body if present, otherwise subject
+		rendered_text = rendered.get("body") or rendered.get("subject") or ""
+		return APIResponse(success=True, data=rendered, error=None, message="Template rendered successfully", meta=None)
+	except ServiceException as se:
+		# if template missing, return friendly error as requested
+		if se.status_code == 404:
+			return JSONResponse(status_code=404, content={"success": False, "error": f"Template '{payload.name}' not found."})
+		err = APIErrorResponse.model_validate({"success": False, "error": se.error, "message": se.message, "meta": {}})
+		return JSONResponse(status_code=se.status_code, content=err.model_dump())
+	except Exception:
+		logger.exception("Error rendering template by name")
 		err = APIErrorResponse.model_validate({"success": False, "error": "InternalServerError", "message": "Internal server error", "meta": {}})
 		return JSONResponse(status_code=500, content=err.model_dump())
 
