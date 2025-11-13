@@ -88,6 +88,11 @@ class RenderRequest(BaseModel):
     data: Dict[str, Any]
 
 
+class RenderByNameRequest(BaseModel):
+    name: str
+    params: Dict[str, Any]
+
+
 class RenderResponse(BaseModel):
     subject: Optional[str] = None
     body: str
