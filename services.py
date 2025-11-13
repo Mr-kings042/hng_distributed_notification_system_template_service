@@ -143,6 +143,98 @@ class TemplateService:
         return TemplateResponse.model_validate({**t.__dict__, "variables": vars_resp})
 
     @staticmethod
+    def get_template_by_id(db: Session, template_id: int) -> Optional[TemplateResponse]:
+        """Retrieve a template by its numeric ID. Raises ServiceException(404) if not found."""
+        t = db.query(template_model).filter(
+            template_model.id == template_id,
+            template_model.is_active == True,
+        ).first()
+        if not t:
+            raise ServiceException(404, "NotFound", "Template not found")
+        vars_q = db.query(template_variable_model).filter(template_variable_model.template_id == t.id).all()
+        vars_resp = [TemplateVariableResponse.model_validate(v) for v in vars_q] if vars_q else None
+        return TemplateResponse.model_validate({**t.__dict__, "variables": vars_resp})
+
+    @staticmethod
+    def update_template_by_id(db: Session, template_id: int, payload: TemplateUpdate, changed_by: Optional[str] = None) -> Optional[TemplateResponse]:
+        t = db.query(template_model).filter(template_model.id == template_id, template_model.is_active == True).first()
+        if not t:
+            raise ServiceException(404, "NotFound", "Template not found")
+
+        # store current as version
+        ver = template_version_model(
+            template_id=t.id,
+            version=t.version,
+            name=t.name,
+            type=t.type,
+            subject=t.subject,
+            body=t.body,
+            language=t.language,
+            changed_by=changed_by,
+        )
+        db.add(ver)
+
+        # apply updates
+        updatable = ["name", "type", "subject", "body", "language"]
+        for field in updatable:
+            if getattr(payload, field, None) is not None:
+                setattr(t, field, getattr(payload, field))
+
+        # increment version
+        t.version = t.version + 1
+
+        # variables: replace if provided
+        if getattr(payload, "variables", None) is not None:
+            # remove existing
+            db.query(template_variable_model).filter(template_variable_model.template_id == t.id).delete()
+            for v in payload.variables:
+                vv = template_variable_model(
+                    template_id=t.id,
+                    variable_name=v.variable_name,
+                    description=v.description,
+                    is_required=v.is_required,
+                )
+                db.add(vv)
+
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise ServiceException(400, "Validation failed", "Template name already exists for this language")
+        db.refresh(t)
+
+        # create new version entry for updated state
+        new_ver = template_version_model(
+            template_id=t.id,
+            version=t.version,
+            name=t.name,
+            type=t.type,
+            subject=t.subject,
+            body=t.body,
+            language=t.language,
+            changed_by=changed_by,
+        )
+        db.add(new_ver)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise ServiceException(400, "Validation failed", "Template update conflicts with existing template name/language")
+
+        vars_q = db.query(template_variable_model).filter(template_variable_model.template_id == t.id).all()
+        vars_resp = [TemplateVariableResponse.model_validate(v) for v in vars_q] if vars_q else None
+        return TemplateResponse.model_validate({**t.__dict__, "variables": vars_resp})
+
+    @staticmethod
+    def delete_template_by_id(db: Session, template_id: int) -> bool:
+        t = db.query(template_model).filter(template_model.id == template_id).first()
+        if not t:
+            raise ServiceException(404, "NotFound", "Template not found")
+        db.delete(t)
+        db.commit()
+        return True
+
+    @staticmethod
     def update_template(db: Session, name: str, payload: TemplateUpdate, changed_by: Optional[str] = None) -> Optional[TemplateResponse]:
         t = db.query(template_model).filter(template_model.name == name, template_model.is_active == True).first()
         if not t:
@@ -214,11 +306,10 @@ class TemplateService:
 
     @staticmethod
     def delete_template(db: Session, name: str) -> bool:
-        t = db.query(template_model).filter(template_model.name == name, template_model.is_active == True).first()
+        t = db.query(template_model).filter(template_model.name == name).first()
         if not t:
             raise ServiceException(404, "NotFound", "Template not found")
-        # soft delete
-        t.is_active = False
+        db.delete(t)
         db.commit()
         return True
 
