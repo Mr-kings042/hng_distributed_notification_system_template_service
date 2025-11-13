@@ -158,18 +158,18 @@ def delete_template_by_id(template_id: int, db: Session = Depends(get_db)):
 		return JSONResponse(status_code=500, content=err.model_dump())
 
 
-@router.post("/api/v1/templates/{name}/render")
-def render_template(name: str, payload: RenderRequest, db: Session = Depends(get_db)):
-	try:
-		rendered = TemplateService.render_template(db, name, payload.data)
-		return APIResponse(success=True, data=rendered, error=None, message="Template rendered successfully", meta=None)
-	except ServiceException as se:
-		err = APIErrorResponse.model_validate({"success": False, "error": se.error, "message": se.message, "meta": {}})
-		return JSONResponse(status_code=se.status_code, content=err.model_dump())
-	except Exception:
-		logger.exception("Error rendering template")
-		err = APIErrorResponse.model_validate({"success": False, "error": "InternalServerError", "message": "Internal server error", "meta": {}})
-		return JSONResponse(status_code=500, content=err.model_dump())
+# @router.post("/api/v1/templates/{name}/render")
+# def render_template(name: str, payload: RenderRequest, db: Session = Depends(get_db)):
+# 	try:
+# 		rendered = TemplateService.render_template(db, name, payload.data)
+# 		return APIResponse(success=True, data=rendered, error=None, message="Template rendered successfully", meta=None)
+# 	except ServiceException as se:
+# 		err = APIErrorResponse.model_validate({"success": False, "error": se.error, "message": se.message, "meta": {}})
+# 		return JSONResponse(status_code=se.status_code, content=err.model_dump())
+# 	except Exception:
+# 		logger.exception("Error rendering template")
+# 		err = APIErrorResponse.model_validate({"success": False, "error": "InternalServerError", "message": "Internal server error", "meta": {}})
+# 		return JSONResponse(status_code=500, content=err.model_dump())
 
 
 @router.post("/api/v1/templates/render")
@@ -205,4 +205,5 @@ def template_versions(name: str, page: int = Query(1, ge=1), limit: int = Query(
 		logger.exception("Error fetching template versions")
 		err = APIErrorResponse.model_validate({"success": False, "error": "InternalServerError", "message": "Internal server error", "meta": {}})
 		return JSONResponse(status_code=500, content=err.model_dump())
+
 
